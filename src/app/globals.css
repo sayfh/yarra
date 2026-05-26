@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: #fafaf7;
+  color: #0a0a0a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numeric table cells should use tabular figures so columns align. */
+.num {
+  font-variant-numeric: tabular-nums;
+}

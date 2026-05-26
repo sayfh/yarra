@@ -11,3 +11,4 @@ build/
 coverage/
 .vercel
 next-env.d.ts
+tsconfig.tsbuildinfo
