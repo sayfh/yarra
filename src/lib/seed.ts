@@ -72,7 +72,9 @@ export const seedDeal: Deal = {
     dcPerUnit: { studio: 28_434, oneBed: 28_434, twoBed: 41_127, threePlusBed: 41_127 },
     educationDCPerUnit: 3_441,
     otherMunicipal: 115_000,
-    dcUpfrontFraction: 1 / 3, // first two payments = 2 × (Total / 6) = 1/3
+    // S&U!K106 = Municipal Fees!H27 + H26 = deferred + 2nd payment = total - 1st payment.
+    // The Excel formula effectively defers 5/6 of total DCs.
+    dcUpfrontFraction: 1 / 6,
   },
   financing: {
     propertyTaxConstructionPct: 0.005,

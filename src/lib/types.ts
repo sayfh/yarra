@@ -274,19 +274,25 @@ export interface ComputedCosts {
 }
 
 export interface ComputedSources {
-  /** Construction loan size ($). */
+  /** Construction loan size ($) — S&U!K104. Sub-line within the equity row. */
   constructionLoan: number;
-  /** Deferred DCs treated as a source ($). */
+  /** Deferred DCs ($) — S&U!K106. Sub-line within the equity row. */
   deferredDCs: number;
-  /** Pre-stabilization operating income offset ($). */
+  /** Pre-stabilization operating income offset ($) — S&U!K105. Sub-line within the equity row. */
   preStabIncome: number;
-  /** Equity required ($). */
+  /**
+   * "Equity Row" total ($) — S&U!K107 = TPC - senior debt - op CF - disposition uses.
+   * In zero-debt templates this equals TPC and decomposes into investor equity +
+   * construction loan + pre-stab income + deferred DCs.
+   */
   equity: number;
   /** Total sources ($) — should equal totalProjectCost. */
   total: number;
-  /** Class A contribution ($). */
+  /** Cash actually required from investors (Class A + Class B) = equity - loan - preStab - deferredDCs. */
+  investorEquity: number;
+  /** Class A (LP) cash contribution ($). */
   classAContribution: number;
-  /** Class B contribution ($). */
+  /** Class B (GP) cash contribution ($). */
   classBContribution: number;
 }
 

@@ -270,21 +270,21 @@ function computeRental(deal: Deal, m: ComputedMassing, totalProjectCost: number)
 }
 
 function computeSources(deal: Deal, costs: ComputedCosts, rental: ComputedRental): ComputedSources {
-  // Deferred DCs = (1 - upfront) × Dev Charges.
+  // Deferred DCs = (1 - upfront) × Dev Charges. S&U!K106.
   const deferredDCs = (1 - deal.fees.dcUpfrontFraction) * costs.soft.devCharges;
-  // Pre-stab income = 6 months × monthly NOI at stabilization (S&U!K105).
+  // Pre-stab income = 6 months × monthly NOI at stabilization. S&U!K105.
   const preStabIncome = 6 * rental.monthlyNOIAtStab;
 
-  // S&U!K104 = K107 × constructionLoanPctOfEquity  (construction loan as 75% of equity contribution).
-  // S&U!K107 = TPC - debt - preStab - deferredDCs → equity = TPC - 0.75×equity - preStab - deferredDCs.
-  // Solve for equity: equity × (1 + 0.75) = TPC - preStab - deferredDCs.
-  const k = deal.capital.constructionLoanPctOfEquity;
-  const equity = (costs.totalProjectCost - preStabIncome - deferredDCs) / (1 + k);
-  const constructionLoan = equity * k;
-  const total = constructionLoan + equity + preStabIncome + deferredDCs;
-
-  const classAContribution = equity * deal.capital.classAContributionPct;
-  const classBContribution = equity - classAContribution;
+  // S&U!K107 (equity row total) = K90 - K97 (senior debt) - K115 (op cf) - K119
+  // (disposition uses). All three are 0 in this template, so equity row = TPC.
+  const equity = costs.totalProjectCost;
+  // S&U!K104 = K107 × LTC. Loan is a SUB-LINE within the equity row, not separate.
+  const constructionLoan = equity * deal.capital.constructionLoanPctOfEquity;
+  // Investor cash = equity row - all the non-cash sub-lines.
+  const investorEquity = equity - constructionLoan - preStabIncome - deferredDCs;
+  const classAContribution = investorEquity * deal.capital.classAContributionPct;
+  const classBContribution = investorEquity - classAContribution;
+  const total = equity;
 
   return {
     constructionLoan,
@@ -292,6 +292,7 @@ function computeSources(deal: Deal, costs: ComputedCosts, rental: ComputedRental
     preStabIncome,
     equity,
     total,
+    investorEquity,
     classAContribution,
     classBContribution,
   };
@@ -329,10 +330,11 @@ function computeWaterfall(
   const exitLegals = -deal.exit.exitLegals;
   const netDispositionProceeds =
     notionalSale + constructionLoanPayback + deferredDCsPayback + dispositionFee + exitFindersFee + exitLegals;
-  const equityReturn = -sources.equity;
+  // Investor cash equity is what's returned, not the full equity row total.
+  const equityReturn = -sources.investorEquity;
   const excessFinancing = netDispositionProceeds + equityReturn; // equityReturn is negative
   const totalDistribution = netDispositionProceeds;
-  const netProfit = totalDistribution - sources.equity;
+  const netProfit = totalDistribution - sources.investorEquity;
   return {
     notionalSale,
     constructionLoanPayback,
@@ -353,7 +355,8 @@ function computeReturns(
   sources: ComputedSources,
   waterfall: ComputedWaterfall,
 ): ComputedReturns {
-  const totalEquity = sources.equity;
+  // Returns are computed on actual investor cash, not the "equity row" total.
+  const totalEquity = sources.investorEquity;
   const totalDistribution = waterfall.totalDistribution;
   const netProfit = totalDistribution - totalEquity;
   const projectROE = totalEquity > 0 ? netProfit / totalEquity : 0;

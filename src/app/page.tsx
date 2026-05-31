@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Chat from "@/components/Chat";
 import Proforma from "@/components/Proforma";
+import Toolbar from "@/components/Toolbar";
 import { seedDeal } from "@/lib/seed";
 import type { Deal } from "@/lib/types";
 
@@ -12,7 +13,6 @@ export default function Page() {
   const [deal, setDeal] = useState<Deal>(seedDeal);
   const [hydrated, setHydrated] = useState(false);
 
-  // Hydrate from localStorage if present (lets the user keep edits across reloads).
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -35,27 +35,21 @@ export default function Page() {
     }
   }, [deal, hydrated]);
 
-  function reset() {
-    setDeal(seedDeal);
-  }
-
   return (
     <div className="grid h-screen w-screen grid-cols-1 lg:grid-cols-[420px_1fr]">
       <aside className="border-r border-rule bg-paper">
         <Chat deal={deal} onDealUpdate={setDeal} />
       </aside>
       <main className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-rule bg-paper px-6 py-2 text-[11px] text-muted">
-          <span>Yarra · AI Proforma</span>
-          <button
-            onClick={reset}
-            className="rounded border border-rule px-2 py-0.5 hover:border-ink"
-            type="button"
-          >
-            Reset to template
-          </button>
+        <div className="border-b border-rule bg-paper px-6 py-2">
+          <div className="flex items-center justify-between text-[11px] text-muted">
+            <span>Yarra · AI Proforma</span>
+          </div>
+          <div className="mt-2">
+            <Toolbar onDealLoaded={setDeal} onReset={() => setDeal(seedDeal)} />
+          </div>
         </div>
-        <div className="h-[calc(100%-2.25rem)]">
+        <div className="h-[calc(100%-7rem)]">
           <Proforma deal={deal} />
         </div>
       </main>

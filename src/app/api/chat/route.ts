@@ -1,5 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import OpenAI from "openai";
+import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import { SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import { TOOL_SPECS, dispatchTool } from "@/lib/ai/tools";
 import type { Deal } from "@/lib/types";
@@ -17,13 +18,13 @@ interface RequestBody {
   prompt: string;
 }
 
-const MODEL = "claude-opus-4-7";
+const MODEL = process.env.OPENAI_MODEL || "gpt-4o";
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
-      { error: "Missing ANTHROPIC_API_KEY env var on the server." },
+      { error: "Missing OPENAI_API_KEY env var on the server." },
       { status: 500 },
     );
   }
@@ -32,14 +33,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing prompt or deal." }, { status: 400 });
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new OpenAI({ apiKey });
 
-  // Multi-turn message array constructed from prior assistant/user turns plus
-  // the new user prompt. We feed tool-use back into the model in a loop.
-  const messages: Anthropic.MessageParam[] = body.history.map((t) => ({
-    role: t.role,
-    content: t.content,
-  }));
+  // Build the message array from prior turns + the new user prompt.
+  const messages: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  for (const t of body.history) {
+    messages.push({ role: t.role, content: t.content });
+  }
   messages.push({ role: "user", content: body.prompt });
 
   let workingDeal: Deal = body.deal;
@@ -47,48 +47,58 @@ export async function POST(req: NextRequest) {
   let finalText = "";
 
   for (let step = 0; step < 8; step++) {
-    const response = await client.messages.create({
+    const response = await client.chat.completions.create({
       model: MODEL,
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      tools: TOOL_SPECS,
       messages,
+      tools: TOOL_SPECS as unknown as ChatCompletionTool[],
+      tool_choice: "auto",
+      temperature: 0.2,
     });
 
-    // Capture any text blocks emitted alongside tool calls.
-    const textChunks: string[] = [];
-    const toolUses: Anthropic.ToolUseBlock[] = [];
-    for (const block of response.content) {
-      if (block.type === "text") textChunks.push(block.text);
-      if (block.type === "tool_use") toolUses.push(block);
-    }
-    if (textChunks.length) finalText = textChunks.join("\n").trim();
+    const choice = response.choices[0];
+    if (!choice) break;
+    const msg = choice.message;
 
-    if (response.stop_reason !== "tool_use" || toolUses.length === 0) {
+    // Capture assistant content (may coexist with tool calls).
+    if (msg.content) finalText = msg.content.trim();
+
+    if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      // No more tool calls — we have the final answer.
       break;
     }
 
-    // Append the assistant turn that includes tool_use blocks so we can reply
-    // with matching tool_result blocks on the next iteration.
-    messages.push({ role: "assistant", content: response.content });
+    // Append the assistant turn (with tool_calls) so we can attach matching
+    // tool responses on the next iteration.
+    messages.push({
+      role: "assistant",
+      content: msg.content ?? "",
+      tool_calls: msg.tool_calls,
+    });
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const tu of toolUses) {
-      const { deal: nextDeal, output } = dispatchTool(workingDeal, tu.name, tu.input as Record<string, unknown>);
+    for (const tc of msg.tool_calls) {
+      if (tc.type !== "function") continue;
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+      } catch {
+        // Malformed args — feed the error back as the tool result.
+        messages.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content: JSON.stringify({ error: "Invalid JSON arguments." }),
+        });
+        continue;
+      }
+      const { deal: nextDeal, output } = dispatchTool(workingDeal, tc.function.name, parsed);
       workingDeal = nextDeal;
-      toolEvents.push({ name: tu.name, input: tu.input, output });
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: tu.id,
+      toolEvents.push({ name: tc.function.name, input: parsed, output });
+      messages.push({
+        role: "tool",
+        tool_call_id: tc.id,
         content: JSON.stringify(output),
       });
     }
-    messages.push({ role: "user", content: toolResults });
   }
 
-  return NextResponse.json({
-    reply: finalText,
-    deal: workingDeal,
-    toolEvents,
-  });
+  return NextResponse.json({ reply: finalText, deal: workingDeal, toolEvents });
 }

@@ -1,93 +1,134 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { computeDeal } from "../calc/engine";
 import { applyPatches } from "../calc/patch";
 import type { ComputedDeal, Deal } from "../types";
 
-export const TOOL_SPECS: Anthropic.Tool[] = [
+/** OpenAI function-calling tool spec. Mirrors openai.chat.completions.create's `tools` parameter. */
+export interface ToolSpec {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export const TOOL_SPECS: ToolSpec[] = [
   {
-    name: "read_state",
-    description:
-      "Read the current proforma state. Returns inputs and the latest computed outputs. Provide a scope to limit the response: \"summary\" (default), \"inputs\", \"costs\", \"sources\", \"rental\", \"waterfall\", \"returns\", or \"all\".",
-    input_schema: {
-      type: "object",
-      properties: {
-        scope: {
-          type: "string",
-          enum: ["summary", "inputs", "costs", "sources", "rental", "waterfall", "returns", "all"],
+    type: "function",
+    function: {
+      name: "read_state",
+      description:
+        'Read the current proforma state. Returns inputs and the latest computed outputs. Provide a scope to limit the response: "summary" (default), "inputs", "costs", "sources", "rental", "waterfall", "returns", or "all".',
+      parameters: {
+        type: "object",
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["summary", "inputs", "costs", "sources", "rental", "waterfall", "returns", "all"],
+          },
         },
+        additionalProperties: false,
       },
     },
   },
   {
-    name: "set_assumption",
-    description:
-      "Set a single leaf input on the deal by dot-path. Returns the recalculated headline KPIs. Examples: path=\"rental.capRate\" value=0.065; path=\"hard.constructionPerSF\" value=410; path=\"units.fourBed.count\" value=120.",
-    input_schema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Dot-path to the leaf, e.g. \"rental.capRate\"." },
-        value: {
-          description: "New value (number or string). Rates must be decimals (0.06 not 6).",
+    type: "function",
+    function: {
+      name: "set_assumption",
+      description:
+        'Set a single leaf input on the deal by dot-path. Returns recalculated headline KPIs. Examples: path="rental.capRate" value=0.065; path="hard.constructionPerSF" value=410; path="units.fourBed.count" value=120.',
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: 'Dot-path to the leaf, e.g. "rental.capRate".' },
+          value: { type: ["number", "string"], description: "New value. Rates must be decimals (0.06 not 6)." },
         },
+        required: ["path", "value"],
+        additionalProperties: false,
       },
-      required: ["path", "value"],
     },
   },
   {
-    name: "set_assumptions",
-    description:
-      "Apply multiple assumption edits atomically. Use this when the changes belong together (e.g. switching to a stabilized scenario).",
-    input_schema: {
-      type: "object",
-      properties: {
-        updates: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              path: { type: "string" },
-              value: {},
+    type: "function",
+    function: {
+      name: "set_assumptions",
+      description:
+        "Apply multiple assumption edits atomically. Use this when changes belong together (e.g. a stabilized scenario).",
+      parameters: {
+        type: "object",
+        properties: {
+          updates: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                path: { type: "string" },
+                value: { type: ["number", "string"] },
+              },
+              required: ["path", "value"],
+              additionalProperties: false,
             },
-            required: ["path", "value"],
           },
         },
+        required: ["updates"],
+        additionalProperties: false,
       },
-      required: ["updates"],
     },
   },
   {
-    name: "run_scenario",
-    description:
-      "Preview the impact of a set of changes without committing them. Returns the resulting headline KPIs (TPC, equity, IRR, EM, YOC, exit value).",
-    input_schema: {
-      type: "object",
-      properties: {
-        name: { type: "string" },
-        updates: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: { path: { type: "string" }, value: {} },
-            required: ["path", "value"],
+    type: "function",
+    function: {
+      name: "run_scenario",
+      description:
+        "Preview the impact of a set of changes without committing them. Returns the resulting headline KPIs.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          updates: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                path: { type: "string" },
+                value: { type: ["number", "string"] },
+              },
+              required: ["path", "value"],
+              additionalProperties: false,
+            },
           },
         },
+        required: ["name", "updates"],
+        additionalProperties: false,
       },
-      required: ["name", "updates"],
     },
   },
   {
-    name: "explain_metric",
-    description:
-      "Get a structured breakdown of how a headline metric is calculated. Use this before answering 'how is X calculated' questions.",
-    input_schema: {
-      type: "object",
-      properties: {
-        metric: {
-          type: "string",
-          enum: ["totalProjectCost", "equity", "constructionLoan", "stabilizationNOI", "yieldOnCost", "projectIRR", "projectEM", "takeoutLoan"],
+    type: "function",
+    function: {
+      name: "explain_metric",
+      description:
+        "Get a structured breakdown of how a headline metric is calculated. Use this before answering 'how is X calculated' questions.",
+      parameters: {
+        type: "object",
+        properties: {
+          metric: {
+            type: "string",
+            enum: [
+              "totalProjectCost",
+              "equity",
+              "constructionLoan",
+              "stabilizationNOI",
+              "yieldOnCost",
+              "projectIRR",
+              "projectEM",
+              "takeoutLoan",
+            ],
+          },
         },
+        required: ["metric"],
+        additionalProperties: false,
       },
-      required: ["metric"],
     },
   },
 ];
@@ -199,15 +240,14 @@ export function explainMetric(deal: Deal, c: ComputedDeal, metric: string): unkn
       };
     case "equity":
       return {
-        formula: "equity = (TPC - preStabIncome - deferredDCs) / (1 + constructionLoanPctOfEquity)",
+        formula: "equity = TPC - preStabIncome - deferredDCs",
         inputs: {
           totalProjectCost: c.costs.totalProjectCost,
           preStabIncome: c.sources.preStabIncome,
           deferredDCs: c.sources.deferredDCs,
-          constructionLoanPctOfEquity: deal.capital.constructionLoanPctOfEquity,
         },
         result: c.sources.equity,
-        note: "Mirrors S&U!K107 = K90 - K97 (debt) - K115 (op cf) - K119 (disposition).",
+        note: "Mirrors S&U!K107. Senior debt and operating cashflow are 0 in this template, so equity carries essentially the entire TPC.",
       };
     case "constructionLoan":
       return {
@@ -217,7 +257,7 @@ export function explainMetric(deal: Deal, c: ComputedDeal, metric: string): unkn
           constructionLoanPctOfEquity: deal.capital.constructionLoanPctOfEquity,
         },
         result: c.sources.constructionLoan,
-        note: "Mirrors S&U!K104. Idiosyncratic to this template — typical industry sizing uses LTC against TPC.",
+        note: "Mirrors S&U!K104. Informational — does not reduce the equity requirement; the loan is a working capital facility paid back from disposition proceeds.",
       };
     case "stabilizationNOI":
       return {
@@ -239,7 +279,7 @@ export function explainMetric(deal: Deal, c: ComputedDeal, metric: string): unkn
           { tMonth: deal.timeline.saleMonth, amount: c.returns.totalDistribution, kind: "distribution" },
         ],
         result: c.returns.projectIRR,
-        note: "MVP simplifies to a single contribution at t=0 and a single distribution at sale month. Multi-tranche timing is roadmap.",
+        note: "MVP simplifies to a single contribution at t=0 and a single distribution at sale month.",
       };
     case "projectEM":
       return {
@@ -271,7 +311,7 @@ export interface ToolDispatchResult {
 
 /**
  * Execute a tool call against the current Deal state. Returns the (possibly
- * updated) Deal plus the JSON-serialisable output to feed back to Claude.
+ * updated) Deal plus a JSON-serialisable output to feed back to the model.
  */
 export function dispatchTool(
   deal: Deal,
@@ -296,13 +336,13 @@ export function dispatchTool(
       return { deal: next, output: { ok: true, applied: updates.length, kpis: summaryView(next, c).headlineKPIs } };
     }
     case "run_scenario": {
-      const name = (input.name as string) ?? "scenario";
+      const sName = (input.name as string) ?? "scenario";
       const updates = (input.updates ?? []) as Array<{ path: string; value: number | string }>;
       const next = applyPatches(deal, updates);
       const c = computeDeal(next);
       return {
         deal, // do NOT commit
-        output: { scenario: name, kpis: summaryView(next, c).headlineKPIs, committed: false },
+        output: { scenario: sName, kpis: summaryView(next, c).headlineKPIs, committed: false },
       };
     }
     case "explain_metric": {
