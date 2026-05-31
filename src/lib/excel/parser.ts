@@ -21,7 +21,9 @@ export interface ExcelOutputs {
  * outputs we want to validate against. Starts from the seed Deal so any cells
  * we couldn't read keep sensible defaults.
  */
-export async function parseWorkbook(buffer: ArrayBuffer | Buffer): Promise<{ parsed: ParseResult; outputs: ExcelOutputs }> {
+export async function parseWorkbook(
+  buffer: ArrayBuffer | Buffer | Uint8Array,
+): Promise<{ parsed: ParseResult; outputs: ExcelOutputs }> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer as ArrayBuffer);
 

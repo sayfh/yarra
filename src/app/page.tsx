@@ -46,7 +46,7 @@ export default function Page() {
             <span>Yarra · AI Proforma</span>
           </div>
           <div className="mt-2">
-            <Toolbar onDealLoaded={setDeal} onReset={() => setDeal(seedDeal)} />
+            <Toolbar deal={deal} onDealLoaded={setDeal} onReset={() => setDeal(seedDeal)} />
           </div>
         </div>
         <div className="h-[calc(100%-7rem)]">

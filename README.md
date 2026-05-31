@@ -7,6 +7,7 @@ A web-based development proforma that mirrors the structure of the in-house Exce
 - **Live proforma model** in TypeScript covering Massing → Unit Mix → Sources & Uses → Capital Stack → Rental Operations → Waterfall → Returns. Pure functions, recomputed on every assumption change.
 - **AI analyst panel** powered by OpenAI (GPT-4o) with function calling. You direct the proforma in plain English ("set LTV to 75%", "what if cap rate goes to 6.5%?", "explain the yield on cost"). The model calls tools to read and edit the deal.
 - **Excel ingestion** — upload your `.xlsx` template and the model reads the named inputs into a live deal.
+- **Excel export** — write the current Deal back into the uploaded template. All 30+ formula cells we don't touch are preserved verbatim; Excel auto-recalculates on open.
 - **Validation suite** — upload your template and the app diffs the engine's outputs against the workbook's resolved values, cell by cell, with tolerance bands.
 - **Seeded from the 87 College Ave W workbook** so the numbers line up on day one.
 
@@ -44,7 +45,6 @@ Implemented:
 - Excel ingestion + validation report
 
 Roadmap:
-- Excel export — write back into the uploaded template, preserving formulas and layout
 - Postgres + deal library + version history + audit trail
 - PDF ingestion with source citations
 - Full monthly cashflow grid (S-curve / straight-line) for precise interest and tranche-timed IRR

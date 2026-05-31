@@ -21,17 +21,24 @@ interface ValidationReport {
 }
 
 interface Props {
+  deal: Deal;
   onDealLoaded: (d: Deal) => void;
   onReset: () => void;
 }
 
-export default function Toolbar({ onDealLoaded, onReset }: Props) {
+export default function Toolbar({ deal, onDealLoaded, onReset }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const validateInputRef = useRef<HTMLInputElement | null>(null);
-  const [busy, setBusy] = useState<"upload" | "validate" | null>(null);
+  const [busy, setBusy] = useState<"upload" | "validate" | "export" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [report, setReport] = useState<ValidationReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // We keep the original template bytes in memory so "Export to Excel" can
+  // write back into the exact workbook the user uploaded — preserving every
+  // formula, named range, and bit of formatting. Bytes are NOT persisted to
+  // localStorage (binary data is awkward there); a page refresh clears them.
+  const [templateBytes, setTemplateBytes] = useState<ArrayBuffer | null>(null);
+  const [templateName, setTemplateName] = useState<string | null>(null);
 
   async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -40,8 +47,9 @@ export default function Toolbar({ onDealLoaded, onReset }: Props) {
     setError(null);
     setMessage(null);
     try {
+      const bytes = await file.arrayBuffer();
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", new Blob([bytes]), file.name);
       const res = await fetch("/api/upload-excel", { method: "POST", body: fd });
       if (!res.ok) {
         const j = await res.json().catch(() => ({ error: res.statusText }));
@@ -49,9 +57,12 @@ export default function Toolbar({ onDealLoaded, onReset }: Props) {
       }
       const data = await res.json();
       onDealLoaded(data.deal as Deal);
+      setTemplateBytes(bytes);
+      setTemplateName(file.name);
       setMessage(
         `Loaded ${file.name}: ${data.stats.cellsRead} cells read` +
-        (data.stats.missingCount ? `, ${data.stats.missingCount} missing` : ""),
+        (data.stats.missingCount ? `, ${data.stats.missingCount} missing` : "") +
+        ". Export now enabled.",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -86,9 +97,38 @@ export default function Toolbar({ onDealLoaded, onReset }: Props) {
     }
   }
 
+  async function onExportClick() {
+    if (!templateBytes) {
+      setError("Upload your Excel template first — export writes back into it to preserve formulas.");
+      return;
+    }
+    setBusy("export");
+    setError(null);
+    setMessage(null);
+    try {
+      const fd = new FormData();
+      fd.append("template", new Blob([templateBytes]), templateName ?? "template.xlsx");
+      fd.append("deal", JSON.stringify(deal));
+      const res = await fetch("/api/export-excel", { method: "POST", body: fd });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(j.error ?? "Export failed");
+      }
+      const blob = await res.blob();
+      triggerDownload(blob, `${slug(deal.name || "deal")}_yarra.xlsx`);
+      setMessage("Exported. Open the file in Excel — formulas will recalculate automatically.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const exportDisabled = busy !== null || !templateBytes;
+
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2 text-[11px] text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
         <input
           ref={fileInputRef}
           type="file"
@@ -123,12 +163,27 @@ export default function Toolbar({ onDealLoaded, onReset }: Props) {
 
         <button
           type="button"
+          onClick={onExportClick}
+          disabled={exportDisabled}
+          title={templateBytes ? "Write current inputs back into the uploaded template" : "Upload a template first to enable export"}
+          className="rounded border border-rule px-2 py-0.5 hover:border-ink disabled:opacity-40"
+        >
+          {busy === "export" ? "Exporting…" : "Export to Excel"}
+        </button>
+
+        <button
+          type="button"
           onClick={onReset}
           className="rounded border border-rule px-2 py-0.5 hover:border-ink"
         >
           Reset to seed
         </button>
 
+        {templateName && (
+          <span className="rounded bg-accent/10 px-2 py-0.5 text-accent">
+            Template: {templateName}
+          </span>
+        )}
         {message && <span className="text-muted">{message}</span>}
         {error && <span className="text-red-700">{error}</span>}
       </div>
@@ -136,6 +191,22 @@ export default function Toolbar({ onDealLoaded, onReset }: Props) {
       {report && <ValidationPanel report={report} onClose={() => setReport(null)} />}
     </div>
   );
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke after a tick so the browser has time to start the download.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function slug(s: string): string {
+  return s.replace(/[^a-z0-9-]+/gi, "_").slice(0, 60) || "deal";
 }
 
 function ValidationPanel({ report, onClose }: { report: ValidationReport; onClose: () => void }) {
